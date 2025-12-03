@@ -1,0 +1,97 @@
+Tutorial: Configurando Samba Server e Client no Play with Docker
+Este tutorial guiará você na criação de duas instâncias Linux no ambiente virtual Play with Docker (PWD), configurando um servidor Samba em uma e acessando o compartilhamento a partir da outra usando a linha de comando.
+Pré-requisitos
+Uma conta Docker ID (gratuita).
+Acesso ao Play with Docker.
+Parte 1: Configuração do Samba Server (Instância 1)
+Acessar o Play with Docker:
+Vá para https://labs.play-with-docker.com/.
+Clique em "Start" e, se necessário, faça login com sua Docker ID.
+Criar a primeira instância (Servidor):
+No painel esquerdo, clique em "+ ADD NEW INSTANCE". Renomeie-a para samba-server.
+Instalar o Samba:
+A instância PWD usa uma imagem Docker baseada em Alpine Linux. Você usará o gerenciador de pacotes apk para instalar o Samba.
+Execute os seguintes comandos no terminal da instância samba-server:
+bash
+apk update
+apk add samba samba-common-tools
+Criar diretório de compartilhamento e usuário:
+Crie um diretório a ser compartilhado e um usuário para acesso (o usuário já deve existir no sistema).
+bash
+mkdir /myshare
+# Criar usuário (ex: 'user1') e definir senha do sistema (opcional no PWD, mas boa prática)
+# adduser -S user1 
+# passwd user1
+# Definir senha Samba para o usuário 'user1' (essencial)
+smbpasswd -a user1
+Quando solicitado, insira e confirme a senha para user1.
+Configurar o arquivo smb.conf:
+Faça um backup do arquivo de configuração original e edite-o:
+bash
+cp /etc/samba/smb.conf /etc/samba/smb.conf.bak
+nano /etc/samba/smb.conf
+Adicione a seguinte seção no final do arquivo, substituindo o conteúdo existente se necessário, para um compartilhamento simples e acessível:
+conf
+[global]
+    workgroup = WORKGROUP
+    security = user
+    map to guest = Bad User
+    # Define interfaces para garantir acessibilidade na rede Docker
+    interfaces = eth0 172.17.0.0/16
+    bind interfaces only = yes
+
+[PublicShare]
+    comment = Docker Samba Share
+    path = /myshare
+    browseable = yes
+    read only = no
+    guest ok = no
+    valid users = user1
+    writable = yes
+Pressione Ctrl+O para salvar, Enter para confirmar o nome do arquivo e Ctrl+X para sair do editor nano.
+Verificar e iniciar o serviço Samba:
+Verifique a configuração com testparm:
+bash
+testparm
+Inicie o serviço SMB (no Alpine Docker, os comandos podem ser diferentes de um sistema Linux completo como Ubuntu/CentOS, mas o serviço smbd deve ser executado):
+Em PWD/Docker, muitas vezes você executa o binário diretamente ou usa um script de inicialização. Para este tutorial simples, reiniciar o container é a maneira mais fácil de garantir que o samba esteja rodando com a nova configuração.
+Você pode tentar iniciar os serviços manualmente:
+bash
+smbd -D
+nmbd -D
+Se você reiniciar a instância, precisará executar estes comandos novamente.
+Obter o IP do Servidor:
+Anote o endereço IP da instância do servidor. Você pode encontrá-lo executando:
+bash
+ifconfig eth0
+# O IP estará listado na linha "inet addr" (ex: 10.0.0.X)
+Neste exemplo, vamos supor que o IP do servidor seja 10.0.0.2.
+Parte 2: Acesso ao Samba Client (Instância 2)
+Criar a segunda instância (Cliente):
+No painel esquerdo do PWD, clique em "+ ADD NEW INSTANCE" novamente. Renomeie-a para samba-client.
+Instalar ferramentas de cliente Samba:
+No terminal da instância samba-client, instale os utilitários necessários:
+bash
+apk update
+apk add samba-client cifs-utils
+Acessar o compartilhamento usando smbclient (linha de comando):
+Use o comando smbclient para listar os compartilhamentos disponíveis no servidor (substitua 10.0.0.2 pelo IP real do seu servidor):
+bash
+smbclient -L //10.0.0.2/PublicShare -U user1
+Insira a senha que você definiu anteriormente para user1 quando solicitado. Você deverá ver o status do compartilhamento.
+Para entrar no modo interativo do smbclient e gerenciar arquivos:
+bash
+smbclient //10.0.0.2/PublicShare -U user1
+Dentro do prompt smb:\>, você pode usar comandos como ls (listar arquivos), put <arquivo_local> (enviar arquivo), get <arquivo_remoto> (baixar arquivo), e exit (sair).
+Montar o compartilhamento usando mount.cifs (como um diretório local):
+Crie um ponto de montagem na máquina cliente:
+bash
+mkdir /mnt/samba_share_local
+Monte o compartilhamento (substitua 10.0.0.2 pelo IP do servidor e user1 pelo seu usuário):
+bash
+mount -t cifs //10.0.0.2/PublicShare /mnt/samba_share_local -o username=user1
+Insira a senha quando solicitado.
+Agora, você pode navegar até /mnt/samba_share_local e interagir com os arquivos compartilhados usando comandos Linux padrão (ls, touch, cp, rm, etc.), como se fosse um diretório local.
+Desmontar o compartilhamento:
+Quando terminar, desmonte o compartilhamento:
+bash
